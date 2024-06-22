@@ -35,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(root_handler))
+        .route("/health", get(healthcheck_handler))
         // NOTE: Extension (layer) is not type safe, while used by handlers, missing to add
         // .layer() still compiles!
         // .layer(Extension(AppState { state: 42 }))
@@ -103,4 +104,13 @@ async fn main() -> anyhow::Result<()> {
 
 async fn root_handler() -> String {
     "hello world".to_string()
+}
+
+async fn healthcheck_handler() -> impl IntoResponse {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Location", "/health")
+        .header("Set-Cookie", "lastchecked=justnow; Max-Age=3600")
+        .body(Body::from("server running ok"))
+        .unwrap()
 }

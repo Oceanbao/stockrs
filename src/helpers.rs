@@ -1,145 +1,3 @@
-// https://docs.rs/axum-extra/latest/axum_extra/index.html
-// https://docs.rs/axum/latest/axum/extract/index.html#common-extractors
-// https://docs.rs/axum/0.7.5/axum/extract/struct.State.html
-// https://docs.rs/axum/latest/axum/middleware/index.html#passing-state-from-middleware-to-handlers
-// https://docs.rs/axum/latest/axum/routing/struct.Router.html#method.route_layer
-mod web;
-use std::time::Duration;
-
-use axum::{
-    async_trait,
-    body::{Body, Bytes},
-    error_handling::HandleErrorLayer,
-    extract::{Extension, FromRequest, MatchedPath, Path, Query, Request},
-    http::{HeaderMap, StatusCode},
-    middleware::{self, Next},
-    response::{Html, IntoResponse, Response},
-    routing::{delete, get, post},
-    BoxError, Form, Json, RequestExt, Router,
-};
-use http_body_util::BodyExt;
-use hyper::header::CONTENT_TYPE;
-use serde::{Deserialize, Serialize};
-use tower::ServiceBuilder;
-use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
-use tracing::{info_span, Span};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use web::errors::AppError;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // This returns an error if the `.env` file doesn't exist, but that's not what we want
-    // since we're not going to use a `.env` file if we deploy this application.
-    dotenv::dotenv().ok();
-
-    // tracing-subscriber is logger crate to define logger impl `Subscriber` from `tracing`.
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            // RUST_LOG=realworld_axum_sqlx=debug,tower_http=debug
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                // axum logs rejections from built-in extractors with `axum::rejection` target
-                // at `TRACE` level. `axum::rejection=trace` enables showing those events.
-                .unwrap_or_else(|_| "axumm=debug,tower_http=debug,axum::rejection=trace".into()),
-        )
-        .init();
-
-    // tracing - record event outside any span context
-    tracing::event!(tracing::Level::INFO, "something happened");
-    // tracing - create span while entering it
-    {
-        // _span exits when drops
-        let _span = tracing::span!(tracing::Level::INFO, "a_span").entered();
-        // tracing - records an event within "a_span"
-        tracing::event!(tracing::Level::INFO, "something happend inside a_span");
-    }
-    // regular macros following standard format: info!, error!, debug!, warn!, trace!
-    tracing::debug!("Looks just like the log crate");
-    tracing::info_span!("a more handy version of creating spans");
-
-    let app = Router::new()
-        .route("/", get(get_handler).post(post_handler))
-        .route("/user", post(create_user))
-        .route("/user/:id", get(get_user))
-        .route("/users", get(list_users))
-        .route("/user/:id", delete(delete_user))
-        .route("/appstate", get(get_app_state))
-        .route("/formorjson", get(custom_extractor_handler))
-        // `TraceLayer` by tower-http with good defaults, here default and customised:
-        .layer(middleware::from_fn(print_request_body))
-        // NOTE: Extension (layer) is not type safe, while used by handlers, missing to add
-        // .layer() still compiles!
-        .layer(Extension(AppState { state: 42 }))
-        .layer(
-            ServiceBuilder::new()
-                .layer(HandleErrorLayer::new(|error: BoxError| async move {
-                    if error.is::<tower::timeout::error::Elapsed>() {
-                        Ok(StatusCode::REQUEST_TIMEOUT)
-                    } else {
-                        Err((
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            format!("Unhandled internal error: {}", error),
-                        ))
-                    }
-                }))
-                .timeout(Duration::from_secs(10))
-                .layer(TraceLayer::new_for_http())
-                .into_inner(),
-        )
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &Request<_>| {
-                    // Log the matched route's path with filled placeholder.
-                    // Use request.uri() or OriginalUri for real path.
-                    let matched_path = request
-                        .extensions()
-                        .get::<MatchedPath>()
-                        .map(MatchedPath::as_str);
-
-                    info_span!(
-                        "http_request",
-                        method = ?request.method(),
-                        matched_path,
-                        some_other_field = tracing::field::Empty,
-                    )
-                })
-                .on_request(|_request: &Request<_>, _span: &Span| {
-                    // Can use `_span.record("some_other_field", value)` in one of these
-                    // closures to attach a value to the initially empty field in the info_span.
-                })
-                .on_response(|_response: &Response, _latency: Duration, _span: &Span| {
-                    // ...
-                })
-                .on_body_chunk(|_chunk: &Bytes, _latency: Duration, _span: &Span| {
-                    // ...
-                })
-                .on_eos(
-                    |_trailers: Option<&HeaderMap>, _stream_duration: Duration, _span: &Span| {
-                        // ...
-                    },
-                )
-                .on_failure(
-                    |_error: ServerErrorsFailureClass, _latency: Duration, _span: &Span| {
-                        // ...
-                    },
-                ),
-        );
-
-    // Note the type given to each resource.
-    // .layer(middleware::from_fn(move |req, next| {
-    //     auth(req, next, middleware_database.clone()) // see auth()
-    // }))
-    // .layer(Extension(Arc::new(tera)))
-    // .layer(Extension(database))
-    // .layer(Extension(Arc::new(Mutex::new(random))))
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    tracing::debug!("server up and listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await?;
-
-    Ok(())
-}
-
 #[derive(Clone, Debug, Serialize)]
 struct AppState {
     state: u32,
@@ -154,6 +12,7 @@ async fn get_app_state(Extension(state): Extension<AppState>) -> impl IntoRespon
 }
 
 // middleware that shows how to consume the request body upfront
+// ------------------------------------------------------------
 async fn print_request_body(
     request: Request<Body>,
     next: Next,
@@ -186,18 +45,8 @@ fn do_thing_with_request_body(bytes: Bytes) {
     tracing::debug!(body = ?bytes);
 }
 
-async fn post_handler(
-    BufferRequestBody(body): BufferRequestBody,
-) -> Result<(StatusCode, String), AppError> {
-    tracing::info!(?body, "handler received body");
-
-    if body.len() < 5 {
-        return Err(AppError::BadRequest);
-    }
-
-    Ok((StatusCode::OK, "post done.".to_string()))
-}
-
+// some handlers
+// -------------
 async fn get_handler() -> Html<&'static str> {
     Html("<h1>Hello world!</h1>")
 }
@@ -268,6 +117,19 @@ async fn perform_delete_user(user_id: u64) -> Result<(), String> {
 }
 
 // extractor that shows how to consume the request body upfront
+// ---------------------------------------------------------------
+async fn post_handler(
+    BufferRequestBody(body): BufferRequestBody,
+) -> Result<(StatusCode, String), AppError> {
+    tracing::info!(?body, "handler received body");
+
+    if body.len() < 5 {
+        return Err(AppError::BadRequest);
+    }
+
+    Ok((StatusCode::OK, "post done.".to_string()))
+}
+
 struct BufferRequestBody(Bytes);
 
 // we must implement `FromRequest` (and not `FromRequestParts`) to consume the body
@@ -294,7 +156,8 @@ struct Payload {
     foo: String,
 }
 
-// custom extractor
+// Custom extractor
+// ----------------
 struct JsonOrForm<T>(T);
 
 async fn custom_extractor_handler(payload: Option<JsonOrForm<Payload>>) {
@@ -357,6 +220,7 @@ fn init_router() -> Router {
 */
 
 /* Static file
+* --------------
 use tower_http::services::{ServeDir, ServeFile};
 
 
