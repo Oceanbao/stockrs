@@ -26,8 +26,9 @@ Workflow with `sqlx` using SQLite:
 # Dev stage
 ###########
 # Ensure ENV with DATABASE_URL set.
+# (for production/build, set it as ?mode=rwc to auto-create the first time)
 # Add code to init sqlite db if nonexist.
-# Create database from sqlx CLI, reading from .env DATABASE_URL.
+# (optional) Create database from sqlx CLI, reading from .env DATABASE_URL.
 sqlx database create
 
 # Iterate
