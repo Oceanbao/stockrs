@@ -21,6 +21,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv::dotenv().ok();
+
     // tracing-subscriber is logger crate to define logger impl `Subscriber` from `tracing`.
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
@@ -32,6 +34,12 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "stockrs=debug,tower_http=debug,axum::rejection=trace".into()),
         )
         .init();
+
+    if !std::path::Path::new("db").exists() {
+        std::fs::create_dir("db")?;
+    }
+    let pool = sqlx::SqlitePool::connect(&std::env::var("DATABASE_URL")?).await?;
+    sqlx::migrate!().run(&pool).await?;
 
     let app = Router::new()
         .route("/", get(root_handler))

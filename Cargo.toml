@@ -20,3 +20,4 @@ futures = "0.3.30"
 anyhow = "1.0.82"
 thiserror = "1.0.59"
 dotenv = "0.15.0"
+sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-native-tls", "sqlite", "macros", "migrate", "chrono" ] }
