@@ -4,5 +4,7 @@
 // However, this style better facilitates a guided exploration of the code, so it's the one
 // we'll be using in this project.
 
+pub mod conn;
 mod guide;
+pub mod helpers;
 mod web;

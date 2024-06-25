@@ -1,3 +1,4 @@
+/*
 #[derive(Clone, Debug, Serialize)]
 struct AppState {
     state: u32,
@@ -265,3 +266,4 @@ fn init_router() -> Router {
 // static DB_POOL: OnceCell<MySqlPool> = OnceCell::new()
 // assert!(DB_POOL.set(pool).is_ok())
 // fn get_db() -> Option<&'static MySqlPool> { DB_POOL.get() }
+*/

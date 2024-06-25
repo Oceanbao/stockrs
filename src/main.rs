@@ -14,6 +14,7 @@ use axum::{
     Router,
 };
 use std::time::Duration;
+use stockrs::conn::get_database_pool;
 use tower::ServiceBuilder;
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{info_span, Span};
@@ -21,7 +22,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
 
     // tracing-subscriber is logger crate to define logger impl `Subscriber` from `tracing`.
     tracing_subscriber::registry()
@@ -38,8 +39,8 @@ async fn main() -> anyhow::Result<()> {
     if !std::path::Path::new("db").exists() {
         std::fs::create_dir("db")?;
     }
-    let pool = sqlx::SqlitePool::connect(&std::env::var("DATABASE_URL")?).await?;
-    sqlx::migrate!().run(&pool).await?;
+    let url = std::env::var("DATABASE_URL")?;
+    let pool = get_database_pool(&url).await?;
 
     let app = Router::new()
         .route("/", get(root_handler))
